@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Moyo</title>
+  <style>
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; }
+
+    #screen1 {
+      position:fixed; inset:0; background:#000;
+      display:flex; align-items:center; justify-content:center; z-index:1;
+    }
+    #screen1 .frame {
+      position:relative;
+      width:min(40vw,40vh); height:min(40vw,40vh);
+    }
+    #moyo1 {
+      width:100%; height:100%;
+      object-fit:cover; display:block;
+    }
+    #eys1 {
+      position:absolute; top:0; left:0;
+      width:100%; height:100%;
+      object-fit:cover; display:block;
+      pointer-events:none;
+      transition: opacity 0.06s ease;
+    }
+
+    #overlay {
+      position:fixed; inset:0; background:#000;
+      z-index:10; opacity:0; pointer-events:none;
+    }
+    #overlay.show    { opacity:1; pointer-events:all; }
+    #overlay.fadeout { animation:fadeOut 0.8s ease forwards; }
+    @keyframes fadeOut { from{opacity:1} to{opacity:0} }
+
+    #screen2 {
+      position:fixed; inset:0;
+      background:linear-gradient(to bottom,#214D8E 0%,#011343 100%);
+      z-index:2; opacity:0; pointer-events:none; overflow:hidden;
+    }
+    #screen2.visible { opacity:1; pointer-events:all; }
+
+    #moyo2-wrap {
+      position:absolute;
+      width:min(28vw,28vh); height:min(28vw,28vh);
+      cursor:grab;
+      user-select:none;
+      touch-action:none;
+      transition: scale 0.25s cubic-bezier(0.34,1.56,0.64,1);
+      scale:1;
+    }
+    #moyo2-wrap.pressed { scale:1.08; cursor:grabbing; }
+
+    #moyo2 {
+      width:100%; height:100%;
+      object-fit:cover; display:block;
+      -webkit-user-drag:none;
+    }
+    #eys2 {
+      position:absolute; top:0; left:0;
+      width:100%; height:100%;
+      object-fit:cover; display:block;
+      -webkit-user-drag:none;
+      pointer-events:none;
+      transition: opacity 0.06s ease;
+    }
+
+    
+    #bounce-msg {
+      position: fixed;
+      z-index: 20;
+      pointer-events: none;
+      white-space: nowrap;
+      transform: translateX(-50%);
+
+      font-family: sans-serif;
+      font-size: 13px;
+      color: rgba(255,255,255,0.9);
+      background: rgba(0,0,0,0.35);
+      padding: 6px 14px;
+      border-radius: 20px;
+      backdrop-filter: blur(6px);
+
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+    #bounce-msg.visible { opacity: 1; }
+
+    
+    #moyo-big-wrap {
+      display: none;
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(80vw, 70vh);
+      height: min(80vw, 70vh);
+      z-index: 15;
+      pointer-events: none;
+      bottom: -100vh;
+      opacity: 1;
+      transition: bottom 0.9s cubic-bezier(0.22,1,0.36,1), opacity 0.6s ease;
+    }
+    #moyo-big-wrap.rise { bottom: -12vh; }
+    #moyo-big-wrap.fadeout-big { opacity: 0; }
+    @keyframes floatBig {
+      0%   { transform: translateX(-50%) translateY(0px); }
+      30%  { transform: translateX(-50%) translateY(-10px); }
+      60%  { transform: translateX(-50%) translateY(4px); }
+      100% { transform: translateX(-50%) translateY(0px); }
+    }
+    #moyo-big-wrap.rise { animation: floatBig 4s ease-in-out infinite; }
+
+    #moyo-big {
+      width: 100%; height: 100%;
+      object-fit: cover; display: block;
+      user-select: none; -webkit-user-drag: none;
+    }
+    #eys-big {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover; display: block;
+      pointer-events: none;
+      transition: opacity 0.06s ease;
+    }
+
+    #idle-msg {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 16;
+      pointer-events: none;
+      white-space: nowrap;
+      font-family: sans-serif;
+      font-size: 15px;
+      color: rgba(255,255,255,0.95);
+      background: rgba(0,0,0,0.4);
+      padding: 7px 18px;
+      border-radius: 20px;
+      backdrop-filter: blur(8px);
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+    #idle-msg.visible { opacity: 1; }
+  </style>
+</head>
+<body>
+
+  <div id="screen1">
+    <div class="frame">
+      <img id="moyo1" src="/assets/moyo/moyocr.png" alt="Moyo" />
+      <img id="eys1" src="/assets/moyo/eys.png" alt="" />
+    </div>
+  </div>
+
+  <div id="overlay"></div>
+
+  <div id="screen2">
+    <div id="moyo2-wrap">
+      <img id="moyo2" src="/assets/moyo/moyocr.png" alt="Moyo" />
+      <img id="eys2" src="/assets/moyo/eys.png" alt="" />
+    </div>
+  </div>
+
+  <div id="bounce-msg"></div>
+  <div id="moyo-big-wrap">
+    <img id="moyo-big" src="/assets/moyo/moyocr.png" alt="" />
+    <img id="eys-big" src="/assets/moyo/eys.png" alt="" />
+  </div>
+  <div id="idle-msg"></div>
+
+  <script>
+    const moyo1   = document.getElementById('moyo1');
+    const overlay = document.getElementById('overlay');
+    const screen2 = document.getElementById('screen2');
+    const moyo2wrap = document.getElementById('moyo2-wrap');
+    const moyo2   = document.getElementById('moyo2');
+    const msgEl     = document.getElementById('bounce-msg');
+    const moyoBigWrap = document.getElementById('moyo-big-wrap');
+    const moyoBig   = document.getElementById('moyo-big');
+    const idleMsgEl = document.getElementById('idle-msg');
+
+    
+    const eys1    = document.getElementById('eys1');
+    const eys2    = document.getElementById('eys2');
+    const eysBig  = document.getElementById('eys-big');
+
+    function startBlink(eyeEl) {
+      let t;
+      function doBlink() {
+
+        eyeEl.style.opacity = '0';
+        setTimeout(() => {
+          eyeEl.style.opacity = '1';
+
+          const delay = 2000 + Math.random() * 4000;
+          t = setTimeout(doBlink, delay);
+        }, 120);
+      }
+
+      eyeEl.style.opacity = '1';
+      t = setTimeout(doBlink, 1500 + Math.random() * 2000);
+      return () => clearTimeout(t);
+    }
+
+    startBlink(eys1);
+
+    let stopBlink2   = null;
+    let stopBlinkBig = null;
+
+    
+    let tapCount = 0, tapTimer = null;
+    moyo1.addEventListener('click', () => {
+      tapCount++;
+      clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => { tapCount = 0; }, 800);
+      if (tapCount >= 5) { tapCount = 0; clearTimeout(tapTimer); startTransition(); }
+    });
+
+    function startTransition() {
+      overlay.classList.remove('fadeout');
+      overlay.classList.add('show');
+      setTimeout(() => {
+        screen2.classList.add('visible');
+        initMoyo2();
+        resetIdle();
+        stopBlink2 = startBlink(eys2);
+        overlay.classList.remove('show');
+        overlay.classList.add('fadeout');
+        overlay.addEventListener('animationend', () => {
+          overlay.classList.remove('fadeout');
+          overlay.style.opacity = '0';
+          overlay.style.pointerEvents = 'none';
+        }, { once: true });
+      }, 600);
+    }
+
+    
+    const bounceMessages = [
+      "hey, don't hurt me :(",
+      "hey!! STOP!!!",
+      "you want to hurt me?",
+      "STOPP!!!",
+      "Hey FUCK, STOP IT!!!",
+      "FUCKK!!!",
+      "okay you hurt me, i have to go :)",
+    ];
+    let bounceCount   = 0;
+    let hideTimer     = null;
+    let msgVisible    = false;
+    let msgLocked     = false;
+    const BOUNCES_NEEDED = 6;
+    let bouncesSinceLast  = 0;
+    let lastBounceTime    = 0;
+    const BOUNCE_COOLDOWN = 400;
+
+    function positionMsg() {
+      const rect   = moyo2.getBoundingClientRect();
+      const msgH   = 36;
+      const gap    = 10;
+      const margin = 8;
+
+      const centerX = rect.left + rect.width / 2;
+
+      if (rect.top >= msgH + gap + margin) {
+
+        msgEl.style.top  = (rect.top - gap - msgH) + 'px';
+        msgEl.style.left = centerX + 'px';
+      } else {
+
+        msgEl.style.top  = (rect.bottom + gap) + 'px';
+        msgEl.style.left = centerX + 'px';
+      }
+    }
+
+    function showMsg(text, isLast) {
+      clearTimeout(hideTimer);
+
+      msgEl.textContent = text;
+      positionMsg();
+      msgEl.classList.add('visible');
+      msgVisible = true;
+      msgLocked  = true;
+      bouncesSinceLast = 0;
+
+      hideTimer = setTimeout(() => {
+        msgEl.classList.remove('visible');
+        msgVisible = false;
+        msgLocked  = false;
+      }, 3000);
+
+      if (isLast) {
+        setTimeout(() => { window.location.href = 'about:blank'; }, 3000);
+      }
+    }
+
+    function onBounce() {
+      const now = Date.now();
+      if (now - lastBounceTime < BOUNCE_COOLDOWN) return;
+      lastBounceTime = now;
+
+      if (bounceCount >= bounceMessages.length) return;
+      if (msgLocked) return;
+
+      bouncesSinceLast++;
+      const needed = BOUNCES_NEEDED;
+      if (bouncesSinceLast < needed) return;
+
+      const isLast = (bounceCount === bounceMessages.length - 1);
+      showMsg(bounceMessages[bounceCount], isLast);
+      bounceCount++;
+    }
+
+    
+    let idleTimer      = null;
+    let idleActive     = false;
+    let idleRound      = 0;
+    const IDLE_TIMEOUT = 10000;
+
+    function resetIdle() {
+      if (idleActive) return;
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(triggerIdle, IDLE_TIMEOUT);
+    }
+
+    document.addEventListener('touchstart', () => {
+      if (idleActive) dismissIdleMoyo(() => { resetIdle(); });
+    });
+    document.addEventListener('mousedown', () => {
+      if (idleActive) dismissIdleMoyo(() => { resetIdle(); });
+    });
+
+    function showIdleMsg(text, delayMs, onDone) {
+      setTimeout(() => {
+
+        const rect = moyoBig.getBoundingClientRect();
+        idleMsgEl.style.bottom = (window.innerHeight - rect.top + 14) + 'px';
+        idleMsgEl.textContent = text;
+        idleMsgEl.classList.add('visible');
+        setTimeout(() => {
+          idleMsgEl.classList.remove('visible');
+          setTimeout(() => { if (onDone) onDone(); }, 400);
+        }, 3000);
+      }, delayMs);
+    }
+
+    function dismissIdleMoyo(onDone) {
+      if (stopBlinkBig) { stopBlinkBig(); stopBlinkBig = null; }
+      eysBig.style.opacity = '0';
+      moyoBigWrap.style.animation = 'none';
+      moyoBigWrap.classList.remove('rise');
+      setTimeout(() => {
+        moyo2wrap.style.opacity = '1';
+        moyo2wrap.style.pointerEvents = 'all';
+        idleActive = false;
+        moyoBigWrap.style.display = 'none';
+        if (onDone) onDone();
+      }, 1000);
+    }
+
+    function triggerIdle() {
+      idleActive = true;
+      idleRound++;
+
+      moyo2wrap.style.transition = 'opacity 0.6s ease';
+      moyo2wrap.style.opacity = '0';
+      moyo2wrap.style.pointerEvents = 'none';
+
+      setTimeout(() => {
+        moyoBigWrap.style.animation = '';
+        moyoBigWrap.style.display = 'block';
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            moyoBigWrap.classList.add('rise');
+            stopBlinkBig = startBlink(eysBig);
+          });
+        });
+
+        if (idleRound === 1) {
+
+          showIdleMsg('hey', 2000, () => {
+            showIdleMsg('are you still here?', 6000, () => {
+              showIdleMsg('???', 4000, () => {
+                showIdleMsg('okay, i will wait', 2000, () => {
+                  dismissIdleMoyo(() => {
+                    resetIdle();
+                  });
+                });
+              });
+            });
+          });
+        } else {
+
+          showIdleMsg('hello??', 2000, () => {
+            showIdleMsg('I think you are sleeping', 0, () => {
+              showIdleMsg("okay, I have a good night's sleep", 0, () => {
+                setTimeout(() => { window.location.href = 'about:blank'; }, 3000);
+              });
+            });
+          });
+        }
+
+      }, 700);
+    }
+
+    
+    function initMoyo2() {
+      const img = moyo2wrap;
+      let imgW = img.offsetWidth;
+      let imgH = img.offsetHeight;
+
+      function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+      function bounds() {
+        return { minX:0, minY:0, maxX:window.innerWidth-imgW, maxY:window.innerHeight-imgH };
+      }
+
+      let posX = window.innerWidth  / 2 - imgW / 2;
+      let posY = window.innerHeight / 2 - imgH / 2;
+
+      let velX = 0, velY = 0;
+      let friction = 0.995;
+      const frictionMin   = 0.91;
+      const frictionDecay = 0.004;
+      const bounce        = 0.38;
+
+      const floatAmpX  = 18;
+      const floatAmpY  = 12;
+      const floatSpeed = 0.00032;
+      let floatX = 0, floatY = 0;
+      let floatLerpK = 1;
+      const floatBlendSpeed = 0.018;
+
+      let dragging = false;
+      let dragOffX = 0, dragOffY = 0;
+      let prevCX = 0, prevCY = 0;
+
+      const t0 = performance.now();
+
+      function loop(now) {
+        const t = (now - t0) * floatSpeed;
+        const targetFX = Math.sin(t * 1.3) * floatAmpX;
+        const targetFY = Math.cos(t * 0.9) * floatAmpY;
+
+        if (dragging) {
+          floatX = 0; floatY = 0; floatLerpK = 0;
+        } else {
+          friction = Math.max(frictionMin, friction - frictionDecay);
+          posX += velX; posY += velY;
+          velX *= friction; velY *= friction;
+
+          floatLerpK = Math.min(1, floatLerpK + floatBlendSpeed);
+          floatX += (targetFX * floatLerpK - floatX) * 0.1;
+          floatY += (targetFY * floatLerpK - floatY) * 0.1;
+
+          const b  = bounds();
+          const vx = posX + floatX;
+          const vy = posY + floatY;
+
+          if (vx < b.minX) {
+            posX = b.minX - floatX; velX = Math.abs(velX) * bounce;
+            if (Math.abs(velX) > 1.5) onBounce();
+          } else if (vx > b.maxX) {
+            posX = b.maxX - floatX; velX = -Math.abs(velX) * bounce;
+            if (Math.abs(velX) > 1.5) onBounce();
+          }
+
+          if (vy < b.minY) {
+            posY = b.minY - floatY; velY = Math.abs(velY) * bounce;
+            if (Math.abs(velY) > 1.5) onBounce();
+          } else if (vy > b.maxY) {
+            posY = b.maxY - floatY; velY = -Math.abs(velY) * bounce;
+            if (Math.abs(velY) > 1.5) onBounce();
+          }
+        }
+
+        img.style.left = (posX + floatX) + 'px';
+        img.style.top  = (posY + floatY) + 'px';
+
+        if (msgVisible) positionMsg();
+
+        requestAnimationFrame(loop);
+      }
+
+      img.style.left = posX + 'px';
+      img.style.top  = posY + 'px';
+      requestAnimationFrame(loop);
+
+      function startDrag(cx, cy) {
+        if (idleActive) return;
+        resetIdle();
+        dragging = true;
+        img.classList.add('pressed');
+        const rect = img.getBoundingClientRect();
+        dragOffX = cx - rect.left;
+        dragOffY = cy - rect.top;
+        posX = rect.left; posY = rect.top;
+        floatX = 0; floatY = 0; floatLerpK = 0;
+        velX = 0; velY = 0;
+        friction = 0.98;
+        prevCX = cx; prevCY = cy;
+      }
+
+      function moveDrag(cx, cy) {
+        if (!dragging) return;
+        const b = bounds();
+        const newX = clamp(cx - dragOffX, b.minX, b.maxX);
+        const newY = clamp(cy - dragOffY, b.minY, b.maxY);
+        velX = cx - prevCX; velY = cy - prevCY;
+        prevCX = cx; prevCY = cy;
+        posX = newX; posY = newY;
+      }
+
+      function endDrag() {
+        if (!dragging) return;
+        dragging = false;
+        img.classList.remove('pressed');
+        resetIdle();
+      }
+
+      img.addEventListener('mousedown', (e) => { startDrag(e.clientX, e.clientY); e.preventDefault(); });
+      window.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY));
+      window.addEventListener('mouseup', endDrag);
+
+      img.addEventListener('touchstart', (e) => {
+        startDrag(e.touches[0].clientX, e.touches[0].clientY);
+        e.preventDefault();
+      }, { passive: false });
+      window.addEventListener('touchmove', (e) => {
+        if (!dragging) return;
+        moveDrag(e.touches[0].clientX, e.touches[0].clientY);
+        e.preventDefault();
+      }, { passive: false });
+      window.addEventListener('touchend',    endDrag);
+      window.addEventListener('touchcancel', endDrag);
+
+      window.addEventListener('resize', () => {
+        imgW = img.offsetWidth; imgH = img.offsetHeight;
+        const b = bounds();
+        posX = clamp(posX, b.minX, b.maxX);
+        posY = clamp(posY, b.minY, b.maxY);
+      });
+    }
+  </script>
+</body>
+</html>
